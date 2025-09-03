@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Solubilidad y Temperatura v14.0</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #020617;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .control-panel {
+            background-color: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(8px);
+        }
+        .control-panel select {
+            background-color: #1e293b;
+            border-color: #334155;
+            transition: background-color 0.2s, border-color 0.2s, color 0.3s;
+        }
+        .control-panel select:hover { border-color: #475569; }
+
+        .control-panel::-webkit-scrollbar, .info-modal-content::-webkit-scrollbar, .data-table-container::-webkit-scrollbar { width: 6px; }
+        .control-panel::-webkit-scrollbar-track, .info-modal-content::-webkit-scrollbar-track, .data-table-container::-webkit-scrollbar-track { background: transparent; }
+        .control-panel::-webkit-scrollbar-thumb, .info-modal-content::-webkit-scrollbar-thumb, .data-table-container::-webkit-scrollbar-thumb { background: #4f46e5; border-radius: 3px; }
+
+        .beaker {
+            position: relative;
+            width: 90%;
+            max-width: 350px;
+            height: 320px;
+            background: rgba(156, 163, 175, 0.05);
+            border: 3px solid rgba(209, 213, 219, 0.3);
+            border-top: none;
+            border-radius: 0 0 30px 30px;
+            margin: 0 auto;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
+        }
+        .beaker::before {
+            content: '';
+            position: absolute;
+            width: 110%;
+            height: 20px;
+            background: rgba(209, 213, 219, 0.1);
+            border-radius: 10px;
+            left: -5%;
+            top: -10px;
+            border: 3px solid rgba(209, 213, 219, 0.3);
+            box-shadow: inset 0 2px 4px rgba(255,255,255,0.1);
+        }
+        #beaker-marks-container {
+            position: absolute;
+            right: -35px;
+            top: 0;
+            height: 100%;
+            width: 30px;
+        }
+        .beaker-mark { height: 1.5px; background-color: rgba(156, 163, 175, 0.7); position: absolute; right: 0; transform: translateY(-50%); }
+        .beaker-mark.prominent { width: 25px; }
+        .beaker-mark.regular { width: 12px; }
+        .beaker-mark span { position: absolute; left: 30px; top: 50%; transform: translateY(-50%); color: #9CA3AF; font-size: 0.7rem; }
+        
+        #solution {
+            position: absolute; bottom: 0; left: 0; width: 100%;
+            background: linear-gradient(to top, var(--solution-color-base, transparent), var(--solution-color-top, transparent));
+            border-radius: 0 0 27px 27px; /* Radio interior del vaso */
+            transition: height 0.3s ease;
+            display: flex; align-items: flex-end; overflow: hidden;
+        }
+        #solution::before { /* Meniscus */
+            content: ''; position: absolute; top: -2px; left: 1%; width: 98%; height: 15px;
+            background: rgba(255,255,255,0.15); 
+            border-radius: 50%;
+            transform: translateY(-50%);
+            filter: blur(2px);
+        }
+        #precipitate-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 30%; /* Max height for precipitate */
+            border-radius: 0 0 27px 27px;
+            display: flex;
+            align-items: flex-end;
+        }
+        #precipitate {
+            width: 100%; 
+            transition: height 0.5s ease; 
+        }
+
+        .stream-particle, .solute-particle-stream {
+            position: absolute;
+            animation: fall 0.5s linear forwards;
+            pointer-events: none;
+        }
+        .stream-particle { width: 3px; height: 10px; background: #3B82F6; border-radius: 2px; }
+        .solute-particle-stream { width: 6px; height: 6px; border-radius: 50%; }
+        .drain-particle { animation: fall-down 0.8s linear forwards; }
+        .steam-particle {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background: rgba(200, 200, 220, 0.4);
+            border-radius: 50%;
+            animation: rise 1.5s ease-out forwards;
+            pointer-events: none;
+        }
+        
+        #vortex {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-left: 30px solid transparent;
+            border-right: 30px solid transparent;
+            border-bottom: 60px solid rgba(255, 255, 255, 0.1);
+            opacity: 0;
+            transform-origin: bottom center;
+        }
+
+        #vortex.active {
+            animation: vortex-swirl 1.5s ease-out forwards;
+        }
+
+        @keyframes vortex-swirl {
+            0% { transform: translateX(-50%) scaleY(0.1) rotate(0deg); opacity: 0; }
+            30% { transform: translateX(-50%) scaleY(1) rotate(720deg); opacity: 1; }
+            100% { transform: translateX(-50%) scaleY(0.1) rotate(1080deg); opacity: 0; }
+        }
+
+        @keyframes rise {
+            from { transform: translateY(0) scale(1); opacity: 0.7; }
+            to { transform: translateY(-80px) scale(0.5); opacity: 0; }
+        }
+        @keyframes fall {
+            from { transform: translateY(0); }
+            to { transform: translateY(150px); opacity: 0; }
+        }
+        @keyframes fall-down {
+            from { transform: translateY(0); opacity: 1; }
+            to { transform: translateY(80px); opacity: 0; }
+        }
+        .tap { cursor: pointer; transition: transform 0.2s, filter 0.3s; }
+        .tap:hover { filter: drop-shadow(0 0 6px #67e8f9); }
+        .tap:active { transform: scale(0.95); }
+        
+        #solute-shaker {
+            filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));
+        }
+        #solute-shaker.dragging {
+            position: absolute;
+            z-index: 50;
+            cursor: grabbing;
+            transform: scale(1.1);
+            transition: none;
+        }
+        #solute-shaker.pouring {
+            transform: scale(1.1) rotate(-45deg);
+        }
+        #saturation-notification {
+            opacity: 1;
+            transition: opacity 0.5s ease-in-out;
+        }
+        #saturation-notification.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .info-modal-content {
+            background-color: #1e293b;
+        }
+        .temp-control-btn {
+            background-color: #334155;
+            border: 1px solid #475569;
+            user-select: none;
+        }
+        .temp-control-btn:active {
+            background-color: #4f46e5;
+        }
+
+    </style>
+</head>
+<body class="text-gray-300 flex flex-col md:flex-row">
+
+    <!-- Columna de Simulación (60%) -->
+    <div class="w-full md:w-3/5 flex flex-col">
+        <div id="simulation-container" class="relative min-h-[60vh] md:min-h-screen bg-[#020617] flex flex-col justify-between p-4">
+            <div id="stream-container" class="absolute top-0 left-0 w-full h-full pointer-events-none z-20"></div>
+            
+            <div id="info-hud" class="w-full bg-slate-900/70 backdrop-blur-sm p-2 rounded-lg z-10 border border-slate-700 shadow-lg flex-shrink-0">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-center">
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Volumen</p>
+                        <p id="volume-display" class="text-sm font-semibold text-white">0.50 L</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Moles en Disolución</p>
+                        <p id="moles-display" class="text-sm font-semibold text-white">0.000 mol</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Concentración</p>
+                        <p id="molarity-display" class="text-sm font-semibold text-emerald-400">0.000 mol/L</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] text-gray-400 uppercase tracking-wider">Temperatura</p>
+                        <p id="temp-display" class="text-sm font-semibold text-white">20 °C</p>
+                    </div>
+                </div>
+            </div>
+            
+             <div id="top-controls" class="w-full flex justify-center items-center gap-12 z-10 py-4">
+                <div id="add-water-tap" class="text-center tap">
+                    <svg class="w-12 h-12 text-sky-400 mx-auto" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3.371a1 1 0 0 1 .553.894v2.752a1 1 0 0 1-2 0V4.265a1 1 0 0 1 .553-.894ZM12 0a4 4 0 0 1 4 4v3h-2V4a2 2 0 0 0-4 0v3H8V4a4 4 0 0 1 4-4ZM8 8H2v2h1v10a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V10h1V8h-6v2h2v8H7V10h1V8Z"/></svg>
+                    <p class="text-xs text-gray-400 mt-1">Añadir Agua</p>
+                </div>
+                <div id="solute-shaker" class="text-center w-[60px] cursor-grab">
+                     <svg class="w-full h-[60px] text-amber-400 pointer-events-none" viewBox="0 0 24 24" fill="currentColor"><path d="M19.988 5.988a2.5 2.5 0 0 0-3.536 0l-5.464 5.464-5.464-5.464a2.5 2.5 0 0 0-3.536 3.536l5.464 5.464-5.464 5.464a2.5 2.5 0 1 0 3.536 3.536l5.464-5.464 5.464 5.464a2.5 2.5 0 0 0 3.536-3.536l-5.464-5.464 5.464-5.464a2.5 2.5 0 0 0 0-3.536ZM9 12a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm4 0a1 1 0 1 1-2 0 1 1 0 0 1 2 0Zm-2 4a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4-4a1 1 0 1 1-2 0 1 1 0 0 1 2 0Z"/></svg>
+                     <p class="text-xs text-gray-400 mt-1 pointer-events-none">Añadir Soluto</p>
+                </div>
+             </div>
+
+             <div class="w-full flex justify-center items-center flex-grow my-2 relative">
+                <!-- Notificación de Saturación -->
+                <div id="saturation-notification" class="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-indigo-600/90 backdrop-blur-sm text-white p-4 rounded-lg shadow-2xl text-center z-50 hidden">
+                    <button id="close-saturation-notification" class="absolute -top-2 -right-2 bg-red-500 rounded-full w-6 h-6 flex items-center justify-center text-white text-lg font-bold leading-none hover:bg-red-600">&times;</button>
+                    <p class="font-bold">¡Disolución Saturada!</p>
+                    <p class="text-sm mt-1">Has alcanzado la concentración máxima.<br>El soluto extra no se disuelve y precipita.</p>
+                </div>
+
+                <div id="drain-tap" class="absolute left-0 sm:left-4 top-1/2 -translate-y-1/2 text-center tap">
+                    <svg class="w-12 h-12 text-gray-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
+                    </svg>
+                    <p class="text-xs text-gray-400 mt-1">Drenar</p>
+                </div>
+
+                <div class="beaker">
+                    <div id="solution">
+                        <div id="vortex"></div>
+                    </div>
+                    <div id="precipitate-container">
+                        <div id="precipitate"></div>
+                    </div>
+                    <div id="beaker-marks-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel de Controles (40%) -->
+    <div class="w-full md:w-2/5 control-panel p-5 z-10 border-t md:border-t-0 md:border-l border-slate-800 md:h-screen md:sticky md:top-0 md:overflow-y-auto flex flex-col">
+        <div class="max-w-md mx-auto space-y-5 flex-grow w-full">
+            <div class="flex justify-end items-center gap-3">
+                 <button id="info-btn" class="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm">Información</button>
+                 <button id="reset-btn" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm">Reiniciar</button>
+            </div>
+
+             <div class="space-y-4 pt-4 border-t border-slate-700">
+                <div>
+                    <label for="solute-select" class="block mb-1 text-sm font-medium text-gray-400">Tipo de Soluto</label>
+                    <select id="solute-select" class="w-full text-white text-sm rounded-md p-2 focus:ring-indigo-500 focus:border-indigo-500 border"></select>
+                    <p id="solute-formula" class="text-center font-mono text-lg text-gray-400 mt-2 h-6"></p>
+                </div>
+            </div>
+
+            <div class="space-y-2 pt-4 border-t border-slate-700">
+                <h3 class="text-base font-bold text-sky-400 mb-2">Datos para Cálculos</h3>
+                <div class="bg-slate-800/50 p-3 rounded-lg text-xs space-y-1">
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Estado: </span>
+                        <span id="saturation-status-display" class="font-semibold text-sky-400 text-sm">Disolvente Puro</span>
+                    </div>
+                     <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Masa Molar (M): </span>
+                        <span id="molar-mass-display" class="font-semibold text-white text-sm">0.00 g/mol</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Masa Soluto: </span>
+                        <span id="solute-mass-display" class="font-semibold text-white text-sm">0.00 g</span>
+                    </div>
+                     <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Masa Disolvente (H₂O): </span>
+                        <span id="solvent-mass-display" class="font-semibold text-white text-sm">0.500 kg</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Masa Disolución: </span>
+                        <span id="solution-mass-display" class="font-semibold text-white text-sm">500.00 g</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Conc. de Saturación (C<sub>sat</sub>): </span>
+                        <span id="max-concentration-display" class="font-semibold text-amber-400 text-sm">0.000 mol/L</span>
+                    </div>
+                     <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Concentración Actual: </span>
+                        <span id="current-concentration-display" class="font-semibold text-emerald-400 text-sm">0.000 mol/L</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-gray-400">Exceso (precipitado): </span>
+                        <span id="excess-solute-display" class="font-semibold text-rose-400 text-sm">0.000 mol</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="pt-4 border-t border-slate-700">
+                <div class="my-4 text-center">
+                     <button id="evaporate-btn" class="w-full bg-orange-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-orange-700 active:bg-orange-800 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Mantén para Evaporar
+                    </button>
+                </div>
+                 <div class="mb-4">
+                    <label class="block font-medium text-gray-400 mb-2 text-center">Temperatura</label>
+                     <div class="flex items-center justify-center gap-2">
+                        <button id="temp-minus-btn" class="temp-control-btn w-10 h-10 rounded-full text-xl font-bold">-</button>
+                        <output id="temp-value-display" class="font-bold text-indigo-300 text-xl w-24 text-center">20 °C</output>
+                        <button id="temp-plus-btn" class="temp-control-btn w-10 h-10 rounded-full text-xl font-bold">+</button>
+                    </div>
+                </div>
+                <h3 class="text-base font-bold text-sky-400 my-4">Gráfica de Solubilidad vs. Temperatura</h3>
+                <div class="bg-slate-900 p-2 rounded-lg h-64">
+                    <canvas id="solubility-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-slate-700">
+                <h3 class="text-base font-bold text-sky-400 mb-2">Registro de Datos</h3>
+                <div class="flex gap-2 mb-2">
+                    <button id="add-to-table-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition-all text-sm">Añadir Datos a la Tabla</button>
+                </div>
+                <div class="data-table-container overflow-x-auto bg-slate-900 rounded-lg p-2 max-h-48 overflow-y-auto">
+                    <table id="data-table" class="w-full text-xs text-left">
+                        <thead class="sticky top-0 bg-slate-800">
+                            <tr>
+                                <th class="p-2">#</th>
+                                <th class="p-2">T (°C)</th>
+                                <th class="p-2">Vol (L)</th>
+                                <th class="p-2">Moles Sol.</th>
+                                <th class="p-2">Conc. (M)</th>
+                                <th class="p-2">Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body">
+                            <!-- Rows will be injected here by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="flex gap-2 mt-2">
+                    <button id="export-csv-btn" class="w-1/2 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-2 rounded-lg transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed">Exportar CSV</button>
+                    <button id="clear-table-btn" class="w-1/2 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-2 rounded-lg transition-all text-sm disabled:opacity-50 disabled:cursor-not-allowed">Limpiar Tabla</button>
+                </div>
+            </div>
+
+        </div>
+        <footer class="p-2 text-center text-xs text-gray-500 z-20 mt-auto pt-4">
+            Simulación creada por <a href="https://aulaquest.com" target="_blank" rel="noopener noreferrer" class="underline hover:text-indigo-400">Aulaquest</a>
+        </footer>
+    </div>
+
+    <!-- Modal de Información -->
+    <div id="info-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="info-modal-content w-full max-w-2xl max-h-[90vh] text-gray-300 p-6 rounded-lg shadow-xl relative border border-slate-600">
+            <button id="close-info-modal" class="absolute top-3 right-3 text-gray-400 hover:text-white">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            <div class="overflow-y-auto max-h-[calc(90vh-3rem)] pr-4">
+                <h2 class="text-2xl font-bold text-sky-400 mb-4">Guía Interactiva de la Simulación</h2>
+                
+                <h3 class="text-lg font-semibold text-indigo-300 mt-4 mb-2">🎯 Objetivo Principal</h3>
+                <p class="text-sm">Este laboratorio virtual es una potente herramienta para resolver ejercicios de disoluciones. Te permite visualizar y manipular conceptos como <strong>concentración</strong>, <strong>solubilidad</strong> y <strong>saturación</strong>, y entender el efecto de la <strong>temperatura</strong>.</p>
+
+                <h3 class="text-lg font-semibold text-indigo-300 mt-6 mb-2">⚙️ ¿Cómo Funciona? Controles</h3>
+                <ul class="list-disc list-inside space-y-3 text-sm">
+                    <li><strong>Añadir Agua:</strong> Aumenta el volumen (V) del disolvente.</li>
+                    <li><strong>Añadir Soluto:</strong> Arrastra el salero para añadir moles (n) de soluto.</li>
+                    <li><strong>Drenar:</strong> Elimina parte de la <strong>disolución completa</strong> (agua + soluto).</li>
+                    <li><strong>Evaporar:</strong> Elimina <strong>solo el agua</strong> (disolvente). La concentración aumenta.</li>
+                    <li><strong>Temperatura:</strong> Mantén pulsado +/- para calentar o enfriar la disolución.</li>
+                </ul>
+
+                <h3 class="text-lg font-semibold text-indigo-300 mt-6 mb-2">🔬 Conceptos y Fórmulas Clave</h3>
+                <div class="space-y-5 text-sm">
+                     <div>
+                        <h4 class="font-semibold text-gray-200">Solubilidad y Saturación (C<sub>sat</sub>)</h4>
+                        <p>La solubilidad es el <strong>límite</strong> de soluto que se puede disolver a una temperatura dada. Este límite es la <strong>Concentración de Saturación (C<sub>sat</sub>)</strong>.</p>
+                        <ul class="list-disc list-inside space-y-2 mt-2 pl-4">
+                            <li><strong class="text-green-400">Insaturada:</strong> Cuando C < C<sub>sat</sub>. Aún cabe más soluto.</li>
+                            <li><strong class="text-amber-400">Saturada:</strong> Cuando C = C<sub>sat</sub>. Has alcanzado el límite.</li>
+                            <li><strong class="text-rose-400">Con Precipitado:</strong> Si añades más soluto del que se puede disolver, el exceso se va al fondo.</li>
+                        </ul>
+                    </div>
+                     <div>
+                        <h4 class="font-semibold text-gray-200 bg-teal-900/50 px-3 py-2 rounded-md">Pregunta Clave: ¿Aumenta la concentración al calentar?</h4>
+                        <p class="mt-2"><strong>Depende.</strong> Es una de las claves de la solubilidad.</p>
+                        <ul class="list-disc list-inside space-y-1 mt-2 pl-4">
+                             <li><strong>Si está INSATURADA (sin precipitado):</strong> NO, la concentración no cambia. Tienes los mismos moles en el mismo volumen.</li>
+                             <li><strong>Si está SATURADA (con precipitado):</strong> SÍ. El calor permite que parte del sólido del fondo se disuelva, aumentando los moles en el líquido y, por tanto, su concentración hasta el nuevo límite.</li>
+                        </ul>
+                    </div>
+                     <div>
+                        <h4 class="font-semibold text-gray-200 bg-orange-900/50 px-3 py-2 rounded-md">Caso Especial: Evaporar una Disolución Saturada</h4>
+                        <p class="mt-2">Si una disolución ya está saturada y evaporas agua, la concentración del líquido **no aumenta**. El líquido ya está en su máxima capacidad, por lo que el exceso de soluto se convierte en sólido, aumentando el precipitado.</p>
+                    </div>
+                </div>
+
+                <h3 class="text-lg font-semibold text-indigo-300 mt-6 mb-2">🚀 Lleva tus Cálculos al Siguiente Nivel</h3>
+                <p class="text-sm">Usa los "Datos para Cálculos" para resolver cualquier ejercicio de disoluciones. Aquí tienes las fórmulas:</p>
+                <div class="space-y-4 text-sm bg-slate-800/50 p-4 rounded-lg mt-2">
+                    <div>
+                        <h4 class="font-bold text-gray-200">Molaridad (mol/L)</h4>
+                        <p class="italic text-xs text-gray-400">Moles de soluto por litro de disolución.</p>
+                        <p class="text-center font-mono bg-slate-900 p-2 rounded-md my-1 text-emerald-400">Molaridad = Moles Soluto / Volumen Disolución (L)</p>
+                    </div>
+                     <div>
+                        <h4 class="font-bold text-gray-200">Molalidad (mol/kg)</h4>
+                        <p class="italic text-xs text-gray-400">Moles de soluto por kilogramo de disolvente.</p>
+                        <p class="text-center font-mono bg-slate-900 p-2 rounded-md my-1 text-emerald-400">Molalidad = Moles Soluto / Masa Disolvente (kg)</p>
+                    </div>
+                     <div>
+                        <h4 class="font-bold text-gray-200">% en Masa</h4>
+                        <p class="italic text-xs text-gray-400">Gramos de soluto por cada 100 gramos de disolución.</p>
+                        <p class="text-center font-mono bg-slate-900 p-2 rounded-md my-1 text-emerald-400">% Masa = (Masa Soluto (g) / Masa Disolución (g)) * 100</p>
+                    </div>
+                     <div>
+                        <h4 class="font-bold text-gray-200">Fracción Molar (X)</h4>
+                        <p class="italic text-xs text-gray-400">Moles de un componente dividido por los moles totales. Necesitarás calcular los moles de agua (n<sub>H₂O</sub> = Masa Disolvente (kg) * 1000 / 18.015).</p>
+                        <p class="text-center font-mono bg-slate-900 p-2 rounded-md my-1 text-emerald-400">X<sub>soluto</sub> = n<sub>soluto</sub> / (n<sub>soluto</sub> + n<sub>H₂O</sub>)</p>
+                    </div>
+                     <div>
+                        <h4 class="font-bold text-gray-200">Partes por Millón (ppm)</h4>
+                        <p class="italic text-xs text-gray-400">Miligramos de soluto por kilogramo de disolución.</p>
+                        <p class="text-center font-mono bg-slate-900 p-2 rounded-md my-1 text-emerald-400">ppm = (Masa Soluto (mg) / Masa Disolución (kg))</p>
+                    </div>
+                </div>
+
+
+                <h3 class="text-lg font-semibold text-indigo-300 mt-6 mb-2">📈 Interpretando la Gráfica</h3>
+                <p class="text-sm">La gráfica es tu mejor herramienta para predecir el comportamiento.</p>
+                <ul class="list-disc list-inside space-y-2 text-sm mt-2">
+                    <li><strong class="text-amber-400">Línea Amarilla:</strong> Límite de solubilidad (C<sub>sat</sub>) a cada temperatura.</li>
+                    <li><strong class="text-sky-400">Punto Azul:</strong> Estado actual de tu disolución.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const SOLUTES = {
+            'CuSO4': { name: 'Sulfato de Cobre (II)', formula: 'CuSO₄', molarMass: 159.61, color: [59, 130, 246], baseSolubility: 1.28, tempFactor: 0.015 },
+            'Sugar': { name: 'Azúcar (Sacarosa)', formula: 'C₁₂H₂₂O₁₁', molarMass: 342.30, color: [240, 240, 240], baseSolubility: 5.84, tempFactor: 0.105 },
+            'CoCl2': { name: 'Cloruro de Cobalto', formula: 'CoCl₂', molarMass: 129.84, color: [236, 72, 153], baseSolubility: 3.84, tempFactor: 0.02 },
+            'KMnO4': { name: 'Permanganato de Potasio', formula: 'KMnO₄', molarMass: 158.03, color: [168, 85, 247], baseSolubility: 0.4, tempFactor: 0.025 },
+            'K2Cr2O7': { name: 'Dicromato de Potasio', formula: 'K₂Cr₂O₇', molarMass: 294.18, color: [249, 115, 22], baseSolubility: 0.42, tempFactor: 0.03 },
+            'NiCl2': { name: 'Cloruro de Níquel (II)', formula: 'NiCl₂', molarMass: 129.60, color: [34, 197, 94], baseSolubility: 4.95, tempFactor: 0.01 },
+            'NaCl': { name: 'Cloruro de Sodio (Sal)', formula: 'NaCl', molarMass: 58.44, color: [200, 200, 200], baseSolubility: 6.15, tempFactor: 0.002 }
+        };
+        
+        let state = {
+            volume: 0.5, 
+            soluteMoles: 0.0,
+            temperature: 20,
+            selectedSoluteKey: 'CuSO4', 
+            isDraggingShaker: false,
+            saturationMessageShown: false,
+            dataLog: []
+        };
+        
+        let solubilityChart;
+        let tempInterval;
+
+        const dom = {
+            solution: document.getElementById('solution'),
+            vortex: document.getElementById('vortex'),
+            precipitate: document.getElementById('precipitate'),
+            precipitateContainer: document.getElementById('precipitate-container'),
+            volumeDisplay: document.getElementById('volume-display'),
+            molesDisplay: document.getElementById('moles-display'),
+            molarityDisplay: document.getElementById('molarity-display'),
+            tempDisplay: document.getElementById('temp-display'),
+            soluteSelect: document.getElementById('solute-select'),
+            soluteFormula: document.getElementById('solute-formula'),
+            tempValueDisplay: document.getElementById('temp-value-display'),
+            tempPlusBtn: document.getElementById('temp-plus-btn'),
+            tempMinusBtn: document.getElementById('temp-minus-btn'),
+            streamContainer: document.getElementById('stream-container'),
+            simulationContainer: document.getElementById('simulation-container'),
+            addWaterTap: document.getElementById('add-water-tap'),
+            drainTap: document.getElementById('drain-tap'),
+            resetBtn: document.getElementById('reset-btn'),
+            beaker: document.querySelector('.beaker'),
+            beakerMarksContainer: document.getElementById('beaker-marks-container'),
+            soluteShaker: document.getElementById('solute-shaker'),
+            saturationStatusDisplay: document.getElementById('saturation-status-display'),
+            excessSoluteDisplay: document.getElementById('excess-solute-display'),
+            solubilityChartCanvas: document.getElementById('solubility-chart'),
+            saturationNotification: document.getElementById('saturation-notification'),
+            closeSaturationNotification: document.getElementById('close-saturation-notification'),
+            maxConcentrationDisplay: document.getElementById('max-concentration-display'),
+            currentConcentrationDisplay: document.getElementById('current-concentration-display'),
+            infoBtn: document.getElementById('info-btn'),
+            infoModal: document.getElementById('info-modal'),
+            closeInfoModal: document.getElementById('close-info-modal'),
+            evaporateBtn: document.getElementById('evaporate-btn'),
+            molarMassDisplay: document.getElementById('molar-mass-display'),
+            soluteMassDisplay: document.getElementById('solute-mass-display'),
+            solventMassDisplay: document.getElementById('solvent-mass-display'),
+            solutionMassDisplay: document.getElementById('solution-mass-display'),
+            addToTableBtn: document.getElementById('add-to-table-btn'),
+            dataTableBody: document.getElementById('data-table-body'),
+            exportCsvBtn: document.getElementById('export-csv-btn'),
+            clearTableBtn: document.getElementById('clear-table-btn'),
+        };
+
+        function calculateSaturationConcentration(temp) {
+            const solute = SOLUTES[state.selectedSoluteKey];
+            return Math.max(0, solute.baseSolubility + (temp - 20) * solute.tempFactor);
+        }
+        
+        function update() {
+            const Csat = calculateSaturationConcentration(state.temperature);
+            
+            let dissolvedMoles = Math.min(state.soluteMoles, Csat * state.volume);
+            dissolvedMoles = Math.max(0, dissolvedMoles);
+
+            const excessMoles = Math.max(0, state.soluteMoles - dissolvedMoles);
+            const currentConcentration = state.volume > 0.001 ? dissolvedMoles / state.volume : 0;
+            
+            dom.evaporateBtn.disabled = state.volume < 0.001;
+
+            updateBeakerView(currentConcentration, Csat, excessMoles);
+            updateDataDisplays(currentConcentration, excessMoles, Csat);
+            updateSolubilityGraph(currentConcentration);
+
+            if (excessMoles > 0 && !state.saturationMessageShown) {
+                showSaturationMessage();
+                state.saturationMessageShown = true;
+            } else if (excessMoles === 0) {
+                 if (state.saturationMessageShown) {
+                    hideSaturationMessage();
+                    state.saturationMessageShown = false;
+                }
+            }
+        }
+        
+        function createCrystalPattern(color) {
+            const rgbColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.9)`;
+            const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='30' height='30'>
+                <defs>
+                    <pattern id='crystalPattern' patternUnits='userSpaceOnUse' width='30' height='30'>
+                        <g fill='${rgbColor}'>
+                            <path d='M15 0 L30 15 L15 30 L0 15 Z' transform='rotate(15 15 15) scale(0.8)'/>
+                            <path d='M5 5 L15 10 L5 15 Z' transform='rotate(-30 10 10)'/>
+                             <path d='M25 25 L15 20 L25 15 Z' transform='rotate(30 20 20)'/>
+                        </g>
+                    </pattern>
+                </defs>
+                <rect width='30' height='30' fill='url(#crystalPattern)'/>
+            </svg>`;
+            return `url(data:image/svg+xml;base64,${btoa(svg)})`;
+        }
+
+        function updateBeakerView(molarity, maxSolubility, excessMoles) {
+            const solute = SOLUTES[state.selectedSoluteKey];
+            const color = solute.color;
+            dom.solution.style.height = `${(state.volume / 1.0) * 100}%`;
+            
+            const concentrationRatio = maxSolubility > 0 ? Math.min(molarity / maxSolubility, 1) : 0;
+            const baseOpacity = 0.1 + concentrationRatio * 0.8;
+            const topOpacity = Math.min(baseOpacity + 0.15, 1.0);
+            dom.solution.style.setProperty('--solution-color-base', `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${baseOpacity})`);
+            dom.solution.style.setProperty('--solution-color-top', `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${topOpacity})`);
+
+            let precipitateHeight = 0;
+            if (state.volume < 0.001 && state.soluteMoles > 0.001) {
+                precipitateHeight = Math.min((state.soluteMoles / 2) * 100, 100);
+            } else {
+                 precipitateHeight = Math.min((excessMoles / 5) * 100, 100);
+            }
+            dom.precipitate.style.height = `${precipitateHeight}%`;
+            dom.precipitate.style.backgroundImage = createCrystalPattern(color);
+        }
+        
+        function getStatusInfo() {
+            let statusText = '';
+            let statusColor = '';
+
+            if (state.volume < 0.001 && state.soluteMoles > 0.001) {
+                statusText = "Sólido Seco";
+                statusColor = 'text-white';
+            } else if (state.soluteMoles > calculateSaturationConcentration(state.temperature) * state.volume + 0.0001) {
+                statusText = "Saturada c/ precipitado";
+                statusColor = 'text-rose-400';
+            } else {
+                 const Csat = calculateSaturationConcentration(state.temperature);
+                 const currentConcentration = state.volume > 0 ? state.soluteMoles / state.volume : 0;
+                 const saturationPercentage = Csat > 0 ? (currentConcentration / Csat) * 100 : 0;
+                 if (saturationPercentage > 99.9) {
+                    statusText = "Saturada";
+                    statusColor = 'text-amber-400';
+                 } else {
+                    statusText = "Insaturada";
+                    statusColor = 'text-green-400';
+                 }
+            }
+            return { text: statusText, color: statusColor };
+        }
+        
+        function updateDataDisplays(currentConcentration, excessMoles, Csat) {
+            const soluteData = SOLUTES[state.selectedSoluteKey];
+            const molarMass = soluteData.molarMass;
+            const soluteMassGrams = state.soluteMoles * molarMass;
+            const solventMassKg = state.volume; // Assuming density 1 kg/L
+            const solutionMassGrams = soluteMassGrams + (solventMassKg * 1000);
+
+            // HUD superior
+            dom.volumeDisplay.textContent = `${state.volume.toFixed(2)} L`;
+            dom.molesDisplay.textContent = `${state.soluteMoles.toFixed(3)} mol`;
+            dom.molarityDisplay.textContent = `${currentConcentration.toFixed(3)} mol/L`;
+            dom.tempDisplay.textContent = `${state.temperature.toFixed(0)} °C`;
+            dom.tempValueDisplay.textContent = `${state.temperature.toFixed(0)} °C`;
+
+            // Panel de control
+            dom.maxConcentrationDisplay.innerHTML = `${Csat.toFixed(3)} mol/L`;
+            dom.currentConcentrationDisplay.textContent = `${currentConcentration.toFixed(3)} mol/L`;
+            dom.excessSoluteDisplay.textContent = `${excessMoles.toFixed(3)} mol`;
+            
+            // Datos para calculos
+            dom.molarMassDisplay.textContent = `${molarMass.toFixed(2)} g/mol`;
+            dom.soluteMassDisplay.textContent = `${soluteMassGrams.toFixed(2)} g`;
+            dom.solventMassDisplay.textContent = `${solventMassKg.toFixed(3)} kg`;
+            dom.solutionMassDisplay.textContent = `${solutionMassGrams.toFixed(2)} g`;
+
+            const statusInfo = getStatusInfo();
+            dom.saturationStatusDisplay.textContent = statusInfo.text;
+            dom.saturationStatusDisplay.className = `font-semibold ${statusInfo.color} text-sm`;
+        }
+        
+        function resetSimulation() {
+            state.volume = 0.5;
+            state.soluteMoles = 0.0;
+            state.temperature = 20;
+            state.dataLog = [];
+            
+            state.saturationMessageShown = false;
+            hideSaturationMessage();
+            
+            updateSoluteFormula();
+            renderDataTable();
+            update();
+        }
+
+        function triggerVortex(intensity = 1) {
+            dom.vortex.style.transform = `translateX(-50%) scaleY(${intensity})`;
+            dom.vortex.classList.remove('active');
+            // Use a reflow trick to restart the animation
+            void dom.vortex.offsetWidth; 
+            dom.vortex.classList.add('active');
+        }
+
+        function createStream(x, y, isDrain = false, color = '#3B82F6') {
+            const p = document.createElement('div');
+            p.className = 'stream-particle';
+            p.style.left = `${x}px`;
+            p.style.top = `${y}px`;
+            if (isDrain) {
+                p.classList.add('drain-particle');
+                p.style.backgroundColor = color;
+            }
+            dom.streamContainer.appendChild(p);
+            setTimeout(() => p.remove(), isDrain ? 800 : 500);
+        }
+        
+        function createSoluteParticleStream(x, y, color) {
+            const p = document.createElement('div');
+            p.className = 'solute-particle-stream';
+            p.style.left = `${x}px`;
+            p.style.top = `${y}px`;
+            p.style.backgroundColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+            dom.streamContainer.appendChild(p);
+            setTimeout(() => p.remove(), 500);
+        }
+        
+        function createSteamParticle() {
+            const solutionRect = dom.solution.getBoundingClientRect();
+            if (solutionRect.height <= 0) return;
+
+            const simContainerRect = dom.streamContainer.getBoundingClientRect();
+            const p = document.createElement('div');
+            p.className = 'steam-particle';
+            const x = solutionRect.left - simContainerRect.left + Math.random() * solutionRect.width;
+            const y = solutionRect.top - simContainerRect.top;
+            p.style.left = `${x}px`;
+            p.style.top = `${y}px`;
+            dom.streamContainer.appendChild(p);
+            setTimeout(() => p.remove(), 1500);
+        }
+
+
+        let pourInterval;
+        function handleAddWater() {
+             if (state.volume < 1.0) {
+                state.volume = Math.min(state.volume + 0.01, 1.0);
+                const beakerRect = dom.beaker.getBoundingClientRect();
+                const simContainerRect = dom.streamContainer.getBoundingClientRect();
+                const streamX = beakerRect.left + beakerRect.width / 2 - simContainerRect.left;
+                const streamY = beakerRect.top - simContainerRect.top;
+                createStream(streamX, streamY);
+                triggerVortex(1.0);
+                update();
+            }
+        }
+
+        function handleEvaporation() {
+            if (state.volume > 0) {
+                state.volume = Math.max(0, state.volume - 0.005);
+                if (Math.random() < 0.5) {
+                    createSteamParticle();
+                }
+                update();
+            }
+        }
+
+        function handleDrain() {
+            if (state.volume > 0) {
+                const beakerRect = dom.beaker.getBoundingClientRect();
+                const simContainerRect = dom.streamContainer.getBoundingClientRect();
+                const streamX = beakerRect.left + beakerRect.width / 2 - simContainerRect.left;
+                const streamY = beakerRect.bottom - simContainerRect.top;
+                const solute = SOLUTES[state.selectedSoluteKey];
+                const color = `rgba(${solute.color[0]}, ${solute.color[1]}, ${solute.color[2]}, 0.8)`;
+                const solutionColor = state.soluteMoles > 0.001 ? color : '#3B82F6';
+                createStream(streamX, streamY, true, solutionColor);
+                
+                const drainAmount = 0.01;
+                const proportion = state.volume > drainAmount ? (state.volume - drainAmount) / state.volume : 0;
+                
+                state.volume = Math.max(0, state.volume - drainAmount);
+                state.soluteMoles *= proportion;
+                
+                if (state.volume < 0.001) {
+                    state.soluteMoles = 0;
+                }
+                
+                update();
+            }
+        }
+        
+        function generateBeakerMarks() {
+            dom.beakerMarksContainer.innerHTML = '';
+            for (let i = 0; i <= 10; i++) {
+                const mark = document.createElement('div');
+                mark.className = 'beaker-mark';
+                mark.style.bottom = `${i * 10}%`;
+                if (i % 5 === 0) {
+                    mark.classList.add('prominent');
+                    const label = document.createElement('span');
+                    label.textContent = `${(i / 10).toFixed(1)} L`;
+                    if (i > 0) mark.appendChild(label);
+                } else mark.classList.add('regular');
+                dom.beakerMarksContainer.appendChild(mark);
+            }
+        }
+
+        function showSaturationMessage() {
+            dom.saturationNotification.classList.remove('hidden');
+        }
+        function hideSaturationMessage() {
+            dom.saturationNotification.classList.add('hidden');
+        }
+        
+        function updateSolubilityGraph(currentConcentration) {
+            if (!solubilityChart) return;
+            
+            const solubilityLine = [];
+            for (let t = 0; t <= 100; t += 10) {
+                solubilityLine.push({x: t, y: calculateSaturationConcentration(t)});
+            }
+            if (solubilityLine[solubilityLine.length-1].x !== 100) {
+                 solubilityLine.push({x: 100, y: calculateSaturationConcentration(100)});
+            }
+
+            solubilityChart.data.datasets[0].data = solubilityLine;
+            solubilityChart.data.datasets[1].data = [{x: state.temperature, y: currentConcentration}];
+            
+            solubilityChart.update('none');
+        }
+        
+        function initChart() {
+            const ctx = dom.solubilityChartCanvas.getContext('2d');
+            if (solubilityChart) { solubilityChart.destroy(); }
+            solubilityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: 'Límite de Solubilidad (Csat)', data: [],
+                        borderColor: 'rgb(250, 204, 21)', backgroundColor: 'rgba(250, 204, 21, 0.2)',
+                        borderWidth: 2, tension: 0.1, fill: true,
+                    }, {
+                        label: 'Estado Actual', data: [],
+                        borderColor: 'rgb(59, 130, 246)', backgroundColor: 'rgb(59, 130, 246)',
+                        pointRadius: 6, pointHoverRadius: 8,
+                        showLine: false,
+                        type: 'scatter'
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            type: 'linear', min: 0, max: 100,
+                            title: { display: true, text: 'Temperatura (°C)', color: '#9CA3AF' },
+                            ticks: { color: '#9CA3AF' }
+                        },
+                        y: {
+                            title: { display: true, text: 'Concentración (mol/L)', color: '#9CA3AF' },
+                            ticks: { color: '#9CA3AF' }, grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                            beginAtZero: true
+                        }
+                    },
+                    plugins: { 
+                        legend: { labels: { color: '#D1D5DB' } },
+                        tooltip: {
+                            callbacks: {
+                                title: (context) => `T = ${context[0].parsed.x.toFixed(1)} °C`,
+                                label: (context) => `C = ${context.parsed.y.toFixed(3)} mol/L`,
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateSoluteFormula() {
+            const solute = SOLUTES[state.selectedSoluteKey];
+            dom.soluteFormula.innerHTML = solute.formula;
+        }
+
+        function renderDataTable() {
+            const hasData = state.dataLog.length > 0;
+            dom.exportCsvBtn.disabled = !hasData;
+            dom.clearTableBtn.disabled = !hasData;
+
+            dom.dataTableBody.innerHTML = '';
+            if (!hasData) {
+                dom.dataTableBody.innerHTML = '<tr><td colspan="6" class="text-center p-4 text-gray-500">Aún no has registrado datos.</td></tr>';
+                return;
+            }
+            state.dataLog.forEach((data, index) => {
+                const row = document.createElement('tr');
+                row.className = 'border-b border-slate-700 hover:bg-slate-800';
+                row.innerHTML = `
+                    <td class="p-2 font-mono">${index + 1}</td>
+                    <td class="p-2">${data.temperature.toFixed(0)}</td>
+                    <td class="p-2">${data.volume.toFixed(2)}</td>
+                    <td class="p-2">${data.soluteMoles.toFixed(3)}</td>
+                    <td class="p-2">${data.concentration.toFixed(3)}</td>
+                    <td class="p-2"><span class="${data.statusColor}">${data.statusText}</span></td>
+                `;
+                dom.dataTableBody.appendChild(row);
+            });
+        }
+
+        function exportToCSV() {
+            if (state.dataLog.length === 0) return;
+
+            const headers = [
+                "Punto #", "Estado", "Temperatura (C)", "Volumen (L)", "Moles Soluto (mol)",
+                "Masa Soluto (g)", "Masa Disolvente (kg)", "Masa Disolucion (g)", "Masa Molar (g/mol)",
+                "Concentracion (mol/L)", "Conc. Saturacion (mol/L)", "Exceso (mol)"
+            ];
+
+            const rows = state.dataLog.map((data, index) => [
+                index + 1, data.statusText.replace(",", ";"), data.temperature.toFixed(2), data.volume.toFixed(3),
+                data.soluteMoles.toFixed(4), data.soluteMass.toFixed(2), data.solventMass.toFixed(3),
+                data.solutionMass.toFixed(2), data.molarMass.toFixed(2), data.concentration.toFixed(4),
+                data.Csat.toFixed(4), data.excessMoles.toFixed(4)
+            ].join(","));
+
+            const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.join("\n");
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "datos_simulacion_solubilidad.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function init() {
+            Object.keys(SOLUTES).forEach(key => {
+                const option = document.createElement('option');
+                option.value = key;
+                option.textContent = SOLUTES[key].name;
+                const color = SOLUTES[key].color;
+                option.style.color = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                dom.soluteSelect.appendChild(option);
+            });
+            
+            generateBeakerMarks();
+            initChart();
+            resetSimulation();
+
+            dom.infoBtn.addEventListener('click', () => dom.infoModal.classList.remove('hidden'));
+            dom.closeInfoModal.addEventListener('click', () => dom.infoModal.classList.add('hidden'));
+            dom.closeSaturationNotification.addEventListener('click', () => hideSaturationMessage());
+
+            dom.infoModal.addEventListener('click', (e) => {
+                if (e.target === dom.infoModal) {
+                    dom.infoModal.classList.add('hidden');
+                }
+            });
+
+            dom.addToTableBtn.addEventListener('click', () => {
+                 const soluteData = SOLUTES[state.selectedSoluteKey];
+                 const Csat = calculateSaturationConcentration(state.temperature);
+                 const dissolvedMoles = Math.min(state.soluteMoles, Csat * state.volume);
+                 const excessMoles = Math.max(0, state.soluteMoles - dissolvedMoles);
+                 const concentration = state.volume > 0.001 ? dissolvedMoles / state.volume : 0;
+                 const statusInfo = getStatusInfo();
+
+                 const snapshot = {
+                    temperature: state.temperature,
+                    volume: state.volume,
+                    soluteMoles: state.soluteMoles,
+                    concentration: concentration,
+                    statusText: statusInfo.text,
+                    statusColor: statusInfo.color,
+                    molarMass: soluteData.molarMass,
+                    soluteMass: state.soluteMoles * soluteData.molarMass,
+                    solventMass: state.volume,
+                    solutionMass: (state.soluteMoles * soluteData.molarMass) + (state.volume * 1000),
+                    Csat: Csat,
+                    excessMoles: excessMoles
+                };
+                state.dataLog.push(snapshot);
+                renderDataTable();
+            });
+
+            dom.clearTableBtn.addEventListener('click', () => {
+                state.dataLog = [];
+                renderDataTable();
+            });
+            dom.exportCsvBtn.addEventListener('click', exportToCSV);
+
+
+            const startPour = (handler) => {
+                if (pourInterval) return;
+                handler();
+                pourInterval = setInterval(handler, 50);
+            };
+            const stopPour = () => {
+                clearInterval(pourInterval);
+                pourInterval = null;
+            };
+
+            const startTempChange = (direction) => {
+                if(tempInterval) return;
+                const change = () => {
+                    state.temperature = Math.max(20, Math.min(100, state.temperature + direction));
+                    update();
+                };
+                change();
+                tempInterval = setInterval(change, 100);
+            };
+            const stopTempChange = () => {
+                clearInterval(tempInterval);
+                tempInterval = null;
+            };
+
+            ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(evt => {
+                window.addEventListener(evt, () => {
+                    stopPour();
+                    stopTempChange();
+                });
+            });
+
+            dom.addWaterTap.addEventListener('mousedown', () => startPour(handleAddWater));
+            dom.drainTap.addEventListener('mousedown', () => startPour(handleDrain));
+            dom.evaporateBtn.addEventListener('mousedown', () => startPour(handleEvaporation));
+            dom.tempPlusBtn.addEventListener('mousedown', () => startTempChange(1));
+            dom.tempMinusBtn.addEventListener('mousedown', () => startTempChange(-1));
+            
+            dom.addWaterTap.addEventListener('touchstart', (e) => { e.preventDefault(); startPour(handleAddWater); });
+            dom.drainTap.addEventListener('touchstart', (e) => { e.preventDefault(); startPour(handleDrain); });
+            dom.evaporateBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startPour(handleEvaporation); });
+            dom.tempPlusBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startTempChange(1); });
+            dom.tempMinusBtn.addEventListener('touchstart', (e) => { e.preventDefault(); startTempChange(-1); });
+
+
+            let shakerOffsetX, shakerOffsetY;
+            let lastPourTime = 0;
+
+            const startDrag = (e) => {
+                state.isDraggingShaker = true;
+                const rect = dom.soluteShaker.getBoundingClientRect();
+                const containerRect = dom.simulationContainer.getBoundingClientRect();
+                
+                dom.soluteShaker.classList.add('dragging');
+                dom.soluteShaker.style.left = `${rect.left - containerRect.left}px`;
+                dom.soluteShaker.style.top = `${rect.top - containerRect.top}px`;
+
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                shakerOffsetX = clientX - rect.left;
+                shakerOffsetY = clientY - rect.top;
+            };
+
+            const drag = (e) => {
+                if (!state.isDraggingShaker) return;
+                e.preventDefault();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const containerRect = dom.simulationContainer.getBoundingClientRect();
+                let x = clientX - containerRect.left - shakerOffsetX;
+                let y = clientY - containerRect.top - shakerOffsetY;
+                dom.soluteShaker.style.left = `${x}px`;
+                dom.soluteShaker.style.top = `${y}px`;
+
+                const beakerRect = dom.beaker.getBoundingClientRect();
+                const shakerRect = dom.soluteShaker.getBoundingClientRect();
+                
+                const isOverBeaker = !(shakerRect.right < beakerRect.left || 
+                                     shakerRect.left > beakerRect.right || 
+                                     shakerRect.bottom < beakerRect.top + 20 ||
+                                     shakerRect.top > beakerRect.bottom);
+
+                if (isOverBeaker) {
+                    dom.soluteShaker.classList.add('pouring');
+                    const now = Date.now();
+                    if(now - lastPourTime > 100) {
+                        lastPourTime = now;
+                        const molesToAdd = 0.05;
+                        state.soluteMoles += molesToAdd; 
+                        triggerVortex(0.5);
+                        const solute = SOLUTES[state.selectedSoluteKey];
+                        const simContainerRect = dom.streamContainer.getBoundingClientRect();
+                        const startY = shakerRect.bottom - simContainerRect.top - 20;
+                        const startX = shakerRect.left + shakerRect.width / 2 - simContainerRect.left;
+                        createSoluteParticleStream(startX, startY, solute.color);
+                        update();
+                    }
+                } else {
+                    dom.soluteShaker.classList.remove('pouring');
+                }
+            };
+            
+            const stopDrag = () => {
+                if (!state.isDraggingShaker) return;
+                state.isDraggingShaker = false;
+                dom.soluteShaker.classList.remove('dragging', 'pouring');
+                dom.soluteShaker.style.left = '';
+                dom.soluteShaker.style.top = '';
+            };
+
+            dom.soluteShaker.addEventListener('mousedown', startDrag);
+            window.addEventListener('mousemove', drag);
+            window.addEventListener('mouseup', stopDrag);
+            dom.soluteShaker.addEventListener('touchstart', startDrag, { passive: true });
+            window.addEventListener('touchmove', drag, { passive: false });
+            window.addEventListener('touchend', stopDrag);
+
+            dom.resetBtn.addEventListener('click', resetSimulation);
+            dom.soluteSelect.addEventListener('change', (e) => {
+                state.selectedSoluteKey = e.target.value;
+                const color = SOLUTES[e.target.value].color;
+                dom.soluteSelect.style.color = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+                dom.soluteSelect.style.borderColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.5)`;
+                resetSimulation();
+            });
+            
+            const initialColor = SOLUTES[state.selectedSoluteKey].color;
+            dom.soluteSelect.style.color = `rgb(${initialColor[0]}, ${initialColor[1]}, ${initialColor[2]})`;
+            dom.soluteSelect.style.borderColor = `rgba(${initialColor[0]}, ${initialColor[1]}, ${initialColor[2]}, 0.5)`;
+            
+            update();
+        }
+
+        init();
+    });
+    </script>
+</body>
+</html>
+
