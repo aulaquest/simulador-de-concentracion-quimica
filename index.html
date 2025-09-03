@@ -185,6 +185,21 @@
             background-color: #4f46e5;
         }
 
+        /* Mobile-specific adjustments */
+        @media (max-width: 767px) {
+            .beaker {
+                width: 65%; /* Reduce width to give space on the sides */
+                max-width: 200px; /* A hard limit for small screens */
+                height: 260px; /* Adjust height for better proportion */
+            }
+            #beaker-marks-container {
+                right: -30px;
+            }
+            #top-controls {
+                gap: 2rem; /* Reduce gap to keep controls compact */
+            }
+        }
+
     </style>
 </head>
 <body class="text-gray-300 flex flex-col md:flex-row">
@@ -234,7 +249,7 @@
                     <p class="text-sm mt-1">Has alcanzado la concentración máxima.<br>El soluto extra no se disuelve y precipita.</p>
                 </div>
 
-                <div id="drain-tap" class="absolute left-0 sm:left-4 top-1/2 -translate-y-1/2 text-center tap">
+                <div id="drain-tap" class="absolute left-0 sm:left-4 top-1/2 -translate-y-1/2 text-center tap z-30">
                     <svg class="w-12 h-12 text-gray-500 mx-auto" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25 12 21m0 0-3.75-3.75M12 21V3" />
                     </svg>
@@ -548,24 +563,19 @@
             }
         }
         
-       function createCrystalPattern(color) {
+        function createCrystalPattern(color) {
             const rgbColor = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.9)`;
             const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20'>
-                <defs>
-                    <pattern id='crystalPattern' patternUnits='userSpaceOnUse' width='20' height='20'>
-                        <g fill='${rgbColor}'>
-                            <circle cx='5' cy='5' r='3' opacity='0.8'/>
-                            <circle cx='15' cy='15' r='2' opacity='0.7'/>
-                            <circle cx='10' cy='2' r='1.5' opacity='0.9'/>
-                            <circle cx='2' cy='16' r='2.5' opacity='0.8'/>
-                        </g>
-                    </pattern>
-                </defs>
-                <rect width='20' height='20' fill='url(#crystalPattern)'/>
+                <rect width='20' height='20' fill='rgba(0,0,0,0)'/>
+                <g fill='${rgbColor}'>
+                    <circle cx='5' cy='5' r='3' opacity='0.8'/>
+                    <circle cx='15' cy='15' r='2' opacity='0.7'/>
+                    <circle cx='10' cy='2' r='1.5' opacity='0.9'/>
+                    <circle cx='2' cy='16' r='2.5' opacity='0.8'/>
+                </g>
             </svg>`;
             return `url(data:image/svg+xml;base64,${btoa(svg)})`;
         }
-
 
         function updateBeakerView(molarity, maxSolubility, excessMoles) {
             const solute = SOLUTES[state.selectedSoluteKey];
@@ -977,6 +987,7 @@
                 window.addEventListener(evt, () => {
                     stopPour();
                     stopTempChange();
+                    if(state.isDraggingShaker) stopDrag();
                 });
             });
 
@@ -1060,10 +1071,8 @@
 
             dom.soluteShaker.addEventListener('mousedown', startDrag);
             window.addEventListener('mousemove', drag);
-            window.addEventListener('mouseup', stopDrag);
             dom.soluteShaker.addEventListener('touchstart', startDrag, { passive: true });
             window.addEventListener('touchmove', drag, { passive: false });
-            window.addEventListener('touchend', stopDrag);
 
             dom.resetBtn.addEventListener('click', resetSimulation);
             dom.soluteSelect.addEventListener('change', (e) => {
@@ -1086,4 +1095,5 @@
     </script>
 </body>
 </html>
+
 
